@@ -251,7 +251,7 @@ class Apn extends PushService implements PushServiceInterface
      */
   public function prepareHandle($deviceTokenData, array $message)
   {
-    $deviceToken = $deviceTokenData->token;
+    $deviceToken = $deviceTokenData['token'];
     $uri = false === $this->config['dry_run'] ? $this->getProductionUrl($deviceToken) : $this->getSandboxUrl($deviceToken);
 
     //$headers = $message['headers'] ?? [];
@@ -279,7 +279,7 @@ class Apn extends PushService implements PushServiceInterface
     $headers = [
       'content-type' => 'application/json',
       'authorization' => 'Bearer ' . $jwt,
-      'apns-topic' => $config["{$deviceTokenData->type}_bundleId"],
+      'apns-topic' => $config["{$deviceTokenData['app']}_bundleId"],
     ];
 
     $options = [
@@ -311,6 +311,11 @@ class Apn extends PushService implements PushServiceInterface
     curl_setopt($ch, CURLOPT_PRIVATE, $deviceToken);
 
     return $ch;
+  }
+
+  function b64($raw, $json=false){
+    if($json) $raw = json_encode($raw);
+    return str_replace('=', '', strtr(base64_encode($raw), '+/', '-_'));
   }
 
   /**
