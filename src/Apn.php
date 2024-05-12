@@ -249,49 +249,71 @@ class Apn extends PushService implements PushServiceInterface
      * @param $request
      * @param array $deviceTokens
      */
-    public function prepareHandle($deviceToken, array $message)
-    {
-        $uri = false === $this->config['dry_run'] ? $this->getProductionUrl($deviceToken) : $this->getSandboxUrl($deviceToken);
-        $headers = $message['headers'] ?? [];
-        if (isset($message['headers'])) {
-            unset($message['headers']);
-        }
-        $body = json_encode($message);
+  public function prepareHandle($deviceTokenData, array $message)
+  {
+    $deviceToken = $deviceTokenData->token;
+    $uri = false === $this->config['dry_run'] ? $this->getProductionUrl($deviceToken) : $this->getSandboxUrl($deviceToken);
 
-        $config = $this->config;
-
-        $options = [
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2,
-            CURLOPT_URL => $uri,
-            CURLOPT_PORT => self::APNS_PORT,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10,
-            CURLOPT_HEADER => true,
-
-            CURLOPT_SSLCERT        => $config['certificate'],
-            CURLOPT_SSL_VERIFYPEER => true
-        ];
-
-        if (isset($config['passPhrase'])) {
-            $options[CURLOPT_SSLCERTPASSWD] = $config['passPhrase'];
-        }
-
-        $ch = curl_init();
-
-        curl_setopt_array($ch, $options);
-        if (!empty($headers)) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $this->decorateHeaders($headers));
-        }
-
-        // store device token to identify response
-        curl_setopt($ch, CURLOPT_PRIVATE, $deviceToken);
-
-        return $ch;
+    //$headers = $message['headers'] ?? [];
+    if (isset($message['headers'])) {
+      unset($message['headers']);
     }
 
-    /**
+    $body = json_encode($message);
+
+    $config = $this->config;
+
+    $token_key = file_get_contents($config['certificate']);
+    $jwt_header = [
+      'alg' => 'ES256',
+      'kid' => $config['keyId']
+    ];
+    $jwt_payload = [
+      'iss' => $config['teamId'],
+      'iat' => time()
+    ];
+    $raw_token_data = $this->b64($jwt_header, true).".".$this->b64($jwt_payload, true);
+    $signature = '';
+    openssl_sign($raw_token_data, $signature, $token_key, 'SHA256');
+    $jwt = $raw_token_data.".".$this->b64($signature);
+    $headers = [
+      'content-type' => 'application/json',
+      'authorization' => 'Bearer ' . $jwt,
+      'apns-topic' => $config["{$deviceTokenData->type}_bundleId"],
+    ];
+
+    $options = [
+      CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2,
+      CURLOPT_URL => $uri,
+      CURLOPT_PORT => self::APNS_PORT,
+      CURLOPT_POST => true,
+      CURLOPT_POSTFIELDS => $body,
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_TIMEOUT => 10,
+      CURLOPT_HEADER => true,
+
+      //CURLOPT_SSLCERT        => $config['certificate'],
+      //CURLOPT_SSL_VERIFYPEER => true
+    ];
+
+    if (isset($config['passPhrase'])) {
+      $options[CURLOPT_SSLCERTPASSWD] = $config['passPhrase'];
+    }
+
+    $ch = curl_init();
+
+    curl_setopt_array($ch, $options);
+    if (!empty($headers)) {
+      curl_setopt($ch, CURLOPT_HTTPHEADER, $this->decorateHeaders($headers));
+    }
+
+    // store device token to identify response
+    curl_setopt($ch, CURLOPT_PRIVATE, $deviceToken);
+
+    return $ch;
+  }
+
+  /**
      * Set the feedback with no exist any certificate.
      *
      * @return mixed|void
